@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -20,6 +21,31 @@ log = get_logger()
 app = FastAPI(title="Day 13 Observability Lab")
 app.add_middleware(CorrelationIdMiddleware)
 agent = LabAgent()
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Return a safe response while preserving request observability."""
+    error_type = type(exc).__name__
+    correlation_id = getattr(request.state, "correlation_id", "MISSING")
+    started_at = getattr(request.state, "request_started_at", time.perf_counter())
+    latency_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    record_error(error_type)
+    log.error(
+        "request_failed",
+        service="api",
+        correlation_id=correlation_id,
+        error_type=error_type,
+        payload={"handled_by": "global_exception_handler"},
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "correlation_id": correlation_id},
+        headers={
+            "x-request-id": correlation_id,
+            "x-response-time-ms": str(latency_ms),
+        },
+    )
 
 
 @app.on_event("startup")
@@ -44,8 +70,13 @@ async def metrics() -> dict:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest) -> ChatResponse:
-    # TODO: Enrich logs with request context (user_id_hash, session_id, feature, model, env)
-    # bind_contextvars(...)
+    bind_contextvars(
+        user_id_hash=hash_user_id(body.user_id),
+        session_id=body.session_id,
+        feature=body.feature,
+        model=os.getenv("DEFAULT_MODEL", "mock-gpt-4o-mini"),
+        env=os.getenv("APP_ENV", "dev"),
+    )
     
     log.info(
         "request_received",
