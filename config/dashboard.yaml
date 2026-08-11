@@ -4,6 +4,7 @@ dashboard:
   time_range_minutes: 60
   refresh_seconds: 30
   panels:
+    # Track request latency percentiles (P50, P95, P99)
     - id: latency
       title: Latency percentiles
       source: data/logs.jsonl
@@ -17,6 +18,7 @@ dashboard:
         operator: lte
         value: 3000
 
+    # Monitor overall request traffic
     - id: traffic
       title: Request traffic
       source: data/logs.jsonl
@@ -30,6 +32,7 @@ dashboard:
         operator: gte
         value: 1
 
+    # Monitor error rate and breakdown by type
     - id: errors
       title: Error rate and breakdown
       source: data/logs.jsonl
@@ -43,6 +46,7 @@ dashboard:
         operator: lte
         value: 2
 
+    # Track overall token consumption costs
     - id: cost
       title: Cost over time
       source: data/logs.jsonl
@@ -56,6 +60,7 @@ dashboard:
         operator: lte
         value: 2.5
 
+    # Monitor token usage (input/output)
     - id: tokens
       title: Input and output tokens
       source: data/logs.jsonl
@@ -69,6 +74,7 @@ dashboard:
         operator: lte
         value: 50000
 
+    # Monitor quality proxy metric
     - id: quality
       title: Quality proxy
       source: data/logs.jsonl
