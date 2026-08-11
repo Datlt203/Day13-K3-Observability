@@ -41,3 +41,17 @@ Validator kiểm tra cấu trúc contract; nó không thể chứng minh biểu 
 6. Tắt incident bằng `python scripts/inject_incident.py --scenario rag_slow --disable`.
 
 Ảnh dashboard phải nhìn được tên panel, time range, đơn vị và threshold. Báo cáo phải dẫn lại trace ID hoặc log line dùng để giải thích thay đổi.
+
+## Dashboard runtime có sẵn trong repository
+
+Repository có sẵn dashboard Streamlit đọc trực tiếp `data/logs.jsonl` và tính đúng sáu
+panel trong contract. Cài dependencies, sau đó chạy:
+
+```bash
+python -m pip install -r requirements.txt
+streamlit run dashboard.py
+```
+
+Mở `http://localhost:8501`, để time range mặc định `60 minutes (default)`, rồi chụp
+toàn bộ sáu panel. Biểu đồ có đường gạch đỏ thể hiện threshold/SLO; dùng nút
+**Refresh data** sau khi chạy load test hoặc incident mới.
