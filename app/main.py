@@ -9,7 +9,7 @@ from structlog.contextvars import bind_contextvars
 from .agent import LabAgent
 from .incidents import disable, enable, status
 from .logging_config import configure_logging, get_logger
-from .metrics import record_error, snapshot
+from .metrics import record_error, record_received, snapshot
 from .middleware import CorrelationIdMiddleware
 from .pii import hash_user_id, summarize_text
 from .schemas import ChatRequest, ChatResponse
@@ -42,11 +42,36 @@ async def metrics() -> dict:
     return snapshot()
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Keep unexpected failures observable without placing raw input in logs."""
+    error_type = type(exc).__name__
+    record_error(error_type)
+    log.error(
+        "unhandled_request_error",
+        service="api",
+        error_type=error_type,
+        payload={"detail": str(exc), "path": request.url.path},
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "correlation_id": getattr(request.state, "correlation_id", None),
+        },
+    )
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest) -> ChatResponse:
-    # TODO: Enrich logs with request context (user_id_hash, session_id, feature, model, env)
-    # bind_contextvars(...)
-    
+    bind_contextvars(
+        user_id_hash=hash_user_id(body.user_id),
+        session_id=body.session_id,
+        feature=body.feature,
+        model=agent.model,
+        env=os.getenv("APP_ENV", "dev"),
+    )
+    record_received()
     log.info(
         "request_received",
         service="api",

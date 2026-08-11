@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Day 13 dashboard snapshot</title>
+<style>
+body { font-family: Arial, sans-serif; color: #172033; margin: 36px; background: #f7f9fc; }
+h1 { margin-bottom: 6px; } .meta { color: #53627a; margin-top: 0; }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: 16px; margin-top: 28px; }
+.panel { background: #fff; border: 1px solid #cdd7e5; border-radius: 10px; padding: 18px; min-height: 118px; }
+h2 { font-size: 18px; margin: 0 0 18px; } .value { font-size: 20px; font-weight: 600; margin: 0 0 14px; }
+.threshold { color: #53627a; margin: 0; }
+@media (max-width: 760px) { body { margin: 20px; } .grid { grid-template-columns: 1fr; } }
+</style></head><body>
+<h1>Day 13 AI Observability</h1>
+<p class="meta">Six-panel runtime snapshot · configured range: 60 minutes · refresh target: 30 seconds</p>
+<p class="meta">Log window: 2026-08-11T03:12:52.829065Z to 2026-08-11T03:15:12.532441Z</p>
+<main class="grid"><section class='panel'><h2>Latency</h2><p class='value'>P50 155 ms · P95 2,658 ms · P99 2,658 ms</p><p class='threshold'>P95 SLO ≤ 3,000 ms</p></section><section class='panel'><h2>Traffic</h2><p class='value'>17 requests · 17 completed</p><p class='threshold'>Source: request_received</p></section><section class='panel'><h2>Errors</h2><p class='value'>0.00% error rate · no failures</p><p class='threshold'>SLO ≤ 2%</p></section><section class='panel'><h2>Cost</h2><p class='value'>USD 0.0328 total</p><p class='threshold'>Daily budget ≤ USD 2.50</p></section><section class='panel'><h2>Tokens</h2><p class='value'>564 input · 2,074 output</p><p class='threshold'>Window guideline ≤ 50,000</p></section><section class='panel'><h2>Quality</h2><p class='value'>0.86 / 1.00</p><p class='threshold'>SLO ≥ 0.75</p></section></main>
+</body></html>

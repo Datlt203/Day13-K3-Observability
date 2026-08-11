@@ -8,7 +8,10 @@ from .mock_llm import FakeLLM
 from .mock_rag import retrieve
 from .pii import hash_user_id, summarize_text
 from .prompt_management import resolve_prompt
-from .tracing import get_langfuse_client, observe, tracing_enabled
+from .tracing import capture_local_trace, current_local_trace, get_langfuse_client, observe, tracing_enabled
+from .logging_config import get_logger
+
+log = get_logger()
 
 
 @dataclass
@@ -26,69 +29,145 @@ class LabAgent:
         self.model = model
         self.llm = FakeLLM(model=model)
 
-    @observe(as_type="generation", capture_input=False, capture_output=False)
+    @observe(name="chat_agent", as_type="agent", capture_input=False, capture_output=False)
     def run(self, user_id: str, feature: str, session_id: str, message: str) -> AgentResult:
+        trace_metadata = {
+            "user_id_hash": hash_user_id(user_id),
+            "session_id": session_id,
+            "feature": feature,
+            "model": self.model,
+            "prompt_source": "langfuse" if tracing_enabled() else "local",
+        }
+        with capture_local_trace(metadata=trace_metadata) as trace:
+            started = time.perf_counter()
+            docs = self._retrieve_documents(message)
+            langfuse_client = get_langfuse_client()
+            prompt = resolve_prompt(
+                langfuse_client,
+                feature=feature,
+                docs=docs,
+                message=message,
+                enabled=tracing_enabled(),
+            )
+            response = self._generate_response(prompt.text, prompt.version)
+            quality_score = self._heuristic_quality(message, response.text, docs)
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            cost_usd = self._estimate_cost(response.usage.input_tokens, response.usage.output_tokens)
+
+            langfuse_client.update_current_trace(
+                user_id=hash_user_id(user_id),
+                session_id=session_id,
+                tags=["lab", feature, self.model],
+                metadata={
+                    "prompt_name": prompt.name,
+                    "prompt_label": prompt.label,
+                    "prompt_version": prompt.version,
+                    "prompt_source": prompt.source,
+                },
+            )
+            langfuse_client.update_current_generation(
+                model=self.model,
+                metadata={
+                    "doc_count": len(docs),
+                    "query_preview": summarize_text(message),
+                    "prompt_name": prompt.name,
+                    "prompt_label": prompt.label,
+                    "prompt_version": prompt.version,
+                    "prompt_source": prompt.source,
+                    "prompt_fetch_error": prompt.fetch_error,
+                },
+                usage_details={
+                    "prompt_tokens": response.usage.input_tokens,
+                    "completion_tokens": response.usage.output_tokens,
+                },
+                cost_details={"total": cost_usd},
+                prompt=prompt.managed_prompt,
+            )
+
+            metrics.record_request(
+                latency_ms=latency_ms,
+                cost_usd=cost_usd,
+                tokens_in=response.usage.input_tokens,
+                tokens_out=response.usage.output_tokens,
+                quality_score=quality_score,
+            )
+            trace.metadata.update(
+                {
+                    "prompt_name": prompt.name,
+                    "prompt_label": prompt.label,
+                    "prompt_version": prompt.version,
+                    "prompt_source": prompt.source,
+                }
+            )
+            trace.finish(
+                output={
+                    "tokens_in": response.usage.input_tokens,
+                    "tokens_out": response.usage.output_tokens,
+                    "cost_usd": cost_usd,
+                    "quality_score": quality_score,
+                }
+            )
+
+            return AgentResult(
+                answer=response.text,
+                latency_ms=latency_ms,
+                tokens_in=response.usage.input_tokens,
+                tokens_out=response.usage.output_tokens,
+                cost_usd=cost_usd,
+                quality_score=quality_score,
+            )
+
+    @observe(name="rag_retrieve", as_type="tool", capture_input=False, capture_output=False)
+    def _retrieve_documents(self, message: str) -> list[str]:
         started = time.perf_counter()
-        docs = retrieve(message)
-        langfuse_client = get_langfuse_client()
-        prompt = resolve_prompt(
-            langfuse_client,
-            feature=feature,
-            docs=docs,
-            message=message,
-            enabled=tracing_enabled(),
-        )
-        response = self.llm.generate(prompt.text)
-        quality_score = self._heuristic_quality(message, response.text, docs)
-        latency_ms = int((time.perf_counter() - started) * 1000)
-        cost_usd = self._estimate_cost(response.usage.input_tokens, response.usage.output_tokens)
+        try:
+            trace = current_local_trace()
+            if trace is None:
+                docs = retrieve(message)
+            else:
+                with trace.span("rag_retrieve", "tool"):
+                    docs = retrieve(message)
+        except Exception as exc:
+            log.error(
+                "component_failed",
+                service="agent",
+                tool_name="rag_retrieve",
+                error_type=type(exc).__name__,
+                payload={"detail": str(exc), "query_preview": summarize_text(message)},
+            )
+            raise
 
-        langfuse_client.update_current_trace(
-            user_id=hash_user_id(user_id),
-            session_id=session_id,
-            tags=["lab", feature, self.model],
-            metadata={
-                "prompt_name": prompt.name,
-                "prompt_label": prompt.label,
-                "prompt_version": prompt.version,
-                "prompt_source": prompt.source,
-            },
+        log.info(
+            "component_completed",
+            service="agent",
+            tool_name="rag_retrieve",
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            payload={"doc_count": len(docs), "query_preview": summarize_text(message)},
         )
-        langfuse_client.update_current_generation(
+        return docs
+
+    @observe(name="llm_generate", as_type="generation", capture_input=False, capture_output=False)
+    def _generate_response(self, prompt_text: str, prompt_version: str):
+        started = time.perf_counter()
+        trace = current_local_trace()
+        if trace is None:
+            response = self.llm.generate(prompt_text)
+        else:
+            with trace.span(
+                "llm_generate", "generation", {"model": self.model, "prompt_version": prompt_version}
+            ):
+                response = self.llm.generate(prompt_text)
+        log.info(
+            "component_completed",
+            service="agent",
+            tool_name="llm_generate",
             model=self.model,
-            metadata={
-                "doc_count": len(docs),
-                "query_preview": summarize_text(message),
-                "prompt_name": prompt.name,
-                "prompt_label": prompt.label,
-                "prompt_version": prompt.version,
-                "prompt_source": prompt.source,
-                "prompt_fetch_error": prompt.fetch_error,
-            },
-            usage_details={
-                "prompt_tokens": response.usage.input_tokens,
-                "completion_tokens": response.usage.output_tokens,
-            },
-            cost_details={"total": cost_usd},
-            prompt=prompt.managed_prompt,
-        )
-
-        metrics.record_request(
-            latency_ms=latency_ms,
-            cost_usd=cost_usd,
+            latency_ms=int((time.perf_counter() - started) * 1000),
             tokens_in=response.usage.input_tokens,
             tokens_out=response.usage.output_tokens,
-            quality_score=quality_score,
+            payload={"prompt_version": prompt_version},
         )
-
-        return AgentResult(
-            answer=response.text,
-            latency_ms=latency_ms,
-            tokens_in=response.usage.input_tokens,
-            tokens_out=response.usage.output_tokens,
-            cost_usd=cost_usd,
-            quality_score=quality_score,
-        )
+        return response
 
     def _estimate_cost(self, tokens_in: int, tokens_out: int) -> float:
         input_cost = (tokens_in / 1_000_000) * 3

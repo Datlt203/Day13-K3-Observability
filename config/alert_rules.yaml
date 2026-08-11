@@ -1,19 +1,21 @@
 alerts:
-  - name: TODO_alert_1
-    severity: TODO
-    condition: TODO
+  - name: chat-error-rate-slo-breach
+    severity: critical
+    condition: "error_rate_pct > 2 for 5m with at least 20 received requests"
     type: symptom-based
-    owner: TODO
-    runbook: docs/alerts.md#alert-1
-  - name: TODO_alert_2
-    severity: TODO
-    condition: TODO
+    owner: "Thành viên D (SRE & Alerts Engineer)"
+    runbook: docs/alerts.md#alert-1--chat-error-rate-slo-breach
+
+  - name: chat-latency-p95-slo-breach
+    severity: warning
+    condition: "latency_p95_ms > 3000 for 10m with at least 10 completed requests"
     type: symptom-based
-    owner: TODO
-    runbook: docs/alerts.md#alert-2
-  - name: TODO_alert_3
-    severity: TODO
-    condition: TODO
+    owner: "Thành viên D (SRE & Alerts Engineer)"
+    runbook: docs/alerts.md#alert-2--chat-latency-p95-slo-breach
+
+  - name: daily-cost-budget-burn
+    severity: warning
+    condition: "sum(cost_usd) since UTC midnight > 2.50"
     type: symptom-based
-    owner: TODO
-    runbook: docs/alerts.md#alert-3
+    owner: "Thành viên D (SRE & Alerts Engineer)"
+    runbook: docs/alerts.md#alert-3--daily-cost-budget-burn
