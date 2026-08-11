@@ -57,3 +57,17 @@ def test_agent_links_prompt_version_to_trace_and_generation(monkeypatch) -> None
     }
     assert generation_update["prompt"] is client.prompt
     assert generation_update["metadata"]["prompt_version"] == "3"
+
+
+def test_agent_exposes_rag_and_llm_as_independent_observations() -> None:
+    agent = agent_module.LabAgent()
+
+    docs = agent_module.LabAgent._retrieve_documents.__wrapped__(
+        agent, "What is the refund policy?"
+    )
+    response = agent_module.LabAgent._generate_response.__wrapped__(
+        agent, "Feature=qa", "local-v1"
+    )
+
+    assert docs
+    assert response.model == agent.model
