@@ -2,82 +2,58 @@
 
 ## 1. Thông tin nhóm
 
-- Tên nhóm:
-- Repository URL:
-- Commit SHA cuối:
-- Thành viên và vai trò:
-  - **[PHẦN CỦA TÔI — THÀNH VIÊN A] Nguyễn Hữu Nhật Minh — MSSV: 2A202601551** — API & Middleware: CP1 Middleware, Correlation ID và exception handler.
+- Tên nhóm: Day13-K3-Observability
+- Repository URL: https://github.com/Datlt203/Day13-K3-Observability
+- Thành viên A: Nguyễn Hữu Nhật Minh — MSSV: 2A202601551 — API & Middleware.
+- Thành viên B: Bùi Văn Khởi — MHV: 2A202601723 — Security Engineer: CP1 PII Scrubbing, regex patterns và kiểm chứng log.
 
 ## 2. Kết quả kỹ thuật
 
-- Điểm `validate_logs.py`: 30/100 (Baseline CP0)
-  ```text
-  --- Lab Verification Results ---
-  Total log records analyzed: 22
-  Records with missing required fields: 20
-  Records with missing enrichment (context): 20
-  Unique correlation IDs found: 0
-  Potential PII leaks detected: 0
+- CP1 tập trung bảo vệ log khỏi email, số điện thoại Việt Nam, CCCD 12 chữ số và số thẻ thử nghiệm.
+- Bộ nhận diện dùng regex có tên rõ ràng trong `app/pii.py`; các pattern được compile một lần để tái sử dụng.
+- `scrub_event` được đăng ký trong pipeline structlog trước `JsonlFileProcessor`, bảo đảm dữ liệu đã redact trước khi render và ghi xuống `data/logs.jsonl`.
+- Validator độc lập `scripts/validate_logs.py` được dùng để tìm lại PII nguyên văn trong JSON log.
 
-  --- Grading Scorecard (Estimates) ---
-  - [FAILED] Missing required fields (ts, level, etc.)
-  - [FAILED] Correlation ID propagation (less than 2 unique IDs)
-  - [FAILED] Log enrichment (missing user_id_hash, etc.)
-  + [PASSED] PII scrubbing
+## 3. Phần việc của thành viên B
 
-  Estimated Score: 30/100
-  ```
-- Tổng số traces:
-- Số PII leak còn lại:
-- Link/đường dẫn dashboard:
+### 3.1. PII scrubbing
 
-## 3. Logging và tracing
+`app/pii.py` cung cấp `scrub_text()` với các pattern:
 
-- **[PHẦN CỦA TÔI — THÀNH VIÊN A] Evidence correlation ID:**
-  - Middleware xóa context cũ ở đầu mỗi request, nhận `x-request-id` hợp lệ từ client hoặc sinh ID theo mẫu `req-<8 ký tự hex>`.
-  - Correlation ID được bind vào structlog, lưu trong `request.state` và trả lại qua response header `x-request-id`.
-  - Response có thêm `x-response-time-ms`; các event `request_received`, `response_sent` và `request_failed` của cùng request dùng chung correlation ID.
-  - Đường dẫn evidence: `submission/evidence/TODO-correlation-id.png`
-- **[PHẦN CỦA TÔI — THÀNH VIÊN A] Evidence exception handler:**
-  - Lỗi trong `/chat` được ghi bằng event `request_failed`, có `error_type` và correlation ID.
-  - Exception chưa được endpoint xử lý được global handler chuyển thành JSON 500 an toàn, không trả stack trace hoặc chi tiết lỗi nội bộ cho client.
-  - Response lỗi vẫn có `x-request-id` và `x-response-time-ms`.
-  - Kết quả kiểm thử: `28 passed`.
-  - Đường dẫn evidence: `submission/evidence/TODO-exception-handler.png`
-- Evidence PII redaction:
-- Evidence trace waterfall:
-- Giải thích một span đáng chú ý:
+| Loại dữ liệu | Pattern/kiểm chứng |
+|---|---|
+| Email | local-part và domain nhiều nhãn |
+| Điện thoại VN | `0xxxxxxxxx`, dạng cách/chấm/gạch và `+84` |
+| CCCD | đúng 12 chữ số |
+| Credit card | 16 chữ số, có thể ngăn cách bằng khoảng trắng/gạch |
 
-## 4. Prompt versioning
+Giá trị bị thay bằng token có dạng `[REDACTED_<TYPE>]`. Scrubbing được áp dụng đệ quy cho string, dict, list và tuple trong toàn bộ event, gồm cả context fields và payload lồng nhau.
 
-- Prompt name:
-- Version/label baseline:
-- Version/label candidate:
-- Trace ID của mỗi version:
-- Bằng chứng đổi label hoặc rollback:
+### 3.2. Kiểm chứng
 
-## 5. Dashboard, SLO và alerts
+Đã bổ sung test `test_chat_log_scrubs_pii_from_nested_payload_and_context` trong `tests/test_chat_observability.py`. Test gửi email và số điện thoại qua `/chat`, đọc JSONL thực tế, xác nhận dữ liệu nguyên văn không xuất hiện và token redaction xuất hiện.
 
-- Kết quả `validate_dashboard.py`:
-- Evidence dashboard:
-- SLO đã chọn và lý do:
-- Alert rules và runbook:
+Evidence đề xuất khi chạy demo:
 
-## 6. Điều tra challenge
+- `submission/evidence/pii-redaction-test.txt`: kết quả test.
+- `submission/evidence/validate-logs.txt`: kết quả `python scripts/validate_logs.py`.
+- `data/logs.jsonl`: log JSONL sau khi scrub, không commit dữ liệu thật hoặc secret.
 
-- Challenge ID:
-- Triệu chứng từ metrics:
-- Trace ID liên quan:
-- Log line/correlation ID liên quan:
-- Root cause:
-- Fix action:
-- Preventive measure:
+## 4. Logging và tracing của nhóm
 
-## 7. Đóng góp cá nhân
+- Middleware của thành viên A sinh/propagate correlation ID, bind vào log context và trả về header `x-request-id`.
+- Các event API giữ `user_id_hash`, `session_id`, `feature`, `model`, `env`; không ghi raw `user_id`.
+- Log request/response dùng preview đã được scrub, còn lỗi trả về client không chứa chi tiết nội bộ.
 
-Với mỗi thành viên, ghi rõ nhiệm vụ và link commit/PR tương ứng.
+## 5. Kiểm thử
+
+- Chạy: `python -m pytest -q`
+- Chạy validator sau khi tạo log: `python scripts/validate_logs.py`
+- Tiêu chí đạt CP1: không còn email, phone, CCCD hoặc credit card nguyên văn trong log; validator không báo PII leak.
+
+## 6. Đóng góp cá nhân
 
 | Thành viên | Phần việc | Commit/PR | Điều đã học |
 |---|---|---|---|
-| **Nguyễn Hữu Nhật Minh — 2A202601551 (Thành viên A)** | Hoàn thiện middleware; sinh/propagate Correlation ID; bind log context; thêm response timing; bổ sung xử lý lỗi `/chat` và global exception handler; viết test API/middleware | `TODO: commit SHA/PR của A` | Correlation ID phải xuyên suốt request, response và structured log; exception response cần an toàn nhưng vẫn giữ đủ metadata để điều tra sự cố. |
-| | | | |
+| Nguyễn Hữu Nhật Minh — 2A202601551 (A) | Middleware, correlation ID, timing và exception handler | TODO | Correlation ID phải xuyên suốt request, response và log. |
+| Bùi Văn Khởi — 2A202601723 (B) | Thiết kế regex PII; triển khai scrub đệ quy toàn event; đăng ký processor trước JSON renderer/file writer; bổ sung test kiểm chứng log không lộ PII. | TODO: commit SHA/PR của B | Redaction phải xảy ra trước khi render/ghi log; cần kiểm tra độc lập trên JSONL thay vì chỉ tin processor. |

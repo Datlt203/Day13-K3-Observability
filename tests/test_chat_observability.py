@@ -36,6 +36,31 @@ def test_chat_response_log_exposes_quality_for_dashboard(
     assert response_event["quality_score"] == response.json()["quality_score"]
 
 
+def test_chat_log_scrubs_pii_from_nested_payload_and_context(
+    monkeypatch, tmp_path: Path
+) -> None:
+    log_path = tmp_path / "logs.jsonl"
+    monkeypatch.setattr(logging_config, "LOG_PATH", log_path)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/chat",
+            json={
+                "user_id": "student-01",
+                "session_id": "session-01",
+                "feature": "qa",
+                "message": "Email student@example.com or call 090 123 4567",
+            },
+        )
+
+    assert response.status_code == 200
+    raw_logs = log_path.read_text(encoding="utf-8")
+    assert "student@example.com" not in raw_logs
+    assert "090 123 4567" not in raw_logs
+    assert "REDACTED_EMAIL" in raw_logs
+    assert "REDACTED_PHONE_VN" in raw_logs
+
+
 def test_middleware_generates_distinct_correlation_ids_and_timing_header() -> None:
     with TestClient(app) as client:
         first = client.get("/health")
